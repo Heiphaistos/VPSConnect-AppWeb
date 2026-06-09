@@ -1,12 +1,12 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY tsconfig.json .
 COPY src ./src
 RUN npm run build
