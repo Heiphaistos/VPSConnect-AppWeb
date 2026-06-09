@@ -90,7 +90,10 @@ services:
       dockerfile: Dockerfile
     container_name: vpsconnect-backend
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - path: .env
+        required: true
+        interpolate: false
     environment:
       - VM_URL=http://victoriametrics:8428
       - LOKI_URL=http://loki:3100
