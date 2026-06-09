@@ -10,16 +10,21 @@ import {
   LogOut,
   Radio,
 } from 'lucide-react'
-
-const NAV = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/docker', label: 'Docker', icon: Container },
-  { href: '/pm2', label: 'PM2', icon: Cpu },
-]
+import { useSnapshot } from '@/hooks/useMetrics'
 
 export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { snapshot } = useSnapshot(10_000)
+
+  const dockerAlerts = snapshot?.containers.filter((c) => c.state === 'failed').length ?? 0
+  const pm2Alerts = snapshot?.processes.filter((p) => p.state === 'failed').length ?? 0
+
+  const NAV = [
+    { href: '/', label: 'Dashboard', icon: LayoutDashboard, alerts: 0 },
+    { href: '/docker', label: 'Docker', icon: Container, alerts: dockerAlerts },
+    { href: '/pm2', label: 'PM2', icon: Cpu, alerts: pm2Alerts },
+  ]
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -43,7 +48,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.map(({ href, label, icon: Icon, alerts }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
           return (
             <Link
@@ -58,7 +63,14 @@ export function Sidebar() {
             >
               <Icon size={15} className={active ? 'text-cyan-400' : 'text-text-dim group-hover:text-text-secondary'} />
               <span className={clsx('font-mono text-xs tracking-wide', active && 'font-medium')}>{label}</span>
-              {active && <span className="ml-auto w-1 h-1 rounded-full bg-cyan-400" />}
+              <span className="ml-auto flex items-center gap-1">
+                {alerts > 0 && (
+                  <span className="flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-crimson text-white font-mono text-[9px] font-bold leading-none">
+                    {alerts > 9 ? '9+' : alerts}
+                  </span>
+                )}
+                {active && alerts === 0 && <span className="w-1 h-1 rounded-full bg-cyan-400" />}
+              </span>
             </Link>
           )
         })}
