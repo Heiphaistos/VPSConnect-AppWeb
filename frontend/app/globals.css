@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --base-950: #060a12;
+  --base-900: #0d1117;
+  --base-800: #161b24;
+  --base-700: #1e2533;
+  --border: #1e2d40;
+  --cyan: #06b6d4;
+  --cyan-glow: rgba(6, 182, 212, 0.2);
+  --mint: #00e898;
+  --crimson: #ff3a5c;
+  --amber: #ffb800;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--base-950);
+  color: #e2e8f0;
+  font-family: 'DM Sans', sans-serif;
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--base-900); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2a3a50; }
+
+/* Terminal log scrollbar */
+.log-terminal::-webkit-scrollbar { width: 4px; }
+.log-terminal::-webkit-scrollbar-thumb { background: #1e3a4a; }
+
+/* Number formatting */
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+.font-display { font-family: 'Syne', sans-serif; }
+
+/* Animated background grid */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(6,182,212,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6,182,212,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Glow effects */
+.glow-cyan { box-shadow: 0 0 24px rgba(6,182,212,0.3), 0 0 0 1px rgba(6,182,212,0.15); }
+.glow-mint  { box-shadow: 0 0 24px rgba(0,232,152,0.3), 0 0 0 1px rgba(0,232,152,0.15); }
+.glow-red   { box-shadow: 0 0 24px rgba(255,58,92,0.3),  0 0 0 1px rgba(255,58,92,0.15);  }
+
+/* Status dot pulse */
+@keyframes statusPulse {
+  0%  { box-shadow: 0 0 0 0 currentColor; }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100%{ box-shadow: 0 0 0 0 transparent; }
+}
+.status-pulse { animation: statusPulse 2s ease-out infinite; }
+
+/* Scan line overlay (optional visual flair) */
+@keyframes scanMove {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+.scanline::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(transparent 50%, rgba(6,182,212,0.015) 50%);
+  background-size: 100% 4px;
+  z-index: 9999;
+}
+
+/* Card base */
+.card {
+  background: var(--base-800);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* Recharts custom tooltip */
+.recharts-tooltip-wrapper { outline: none !important; }
+
+/* Progress bar */
+@keyframes progressFill {
+  from { width: 0; }
+}
+.progress-fill { animation: progressFill 0.8s ease forwards; }
+
+/* Page fade in */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: fadeSlideUp 0.4s ease forwards; }
+
+/* Log line colors */
+.log-err  { color: #ff3a5c; }
+.log-warn { color: #ffb800; }
+.log-info { color: #22d9f0; }
+.log-ok   { color: #00e898; }

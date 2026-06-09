@@ -1,0 +1,146 @@
+version: '3.9'
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.101.0
+    container_name: vpsconnect-vm
+    restart: unless-stopped
+    volumes:
+      - vm-data:/victoria-metrics-data
+    command:
+      - -retentionPeriod=2d
+      - -storageDataPath=/victoria-metrics-data
+      - -httpListenAddr=:8428
+      - -maxConcurrentInserts=4
+    ports:
+      - "127.0.0.1:8428:8428"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  loki:
+    image: grafana/loki:2.9.7
+    container_name: vpsconnect-loki
+    restart: unless-stopped
+    volumes:
+      - ./config/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/loki.yml
+    ports:
+      - "127.0.0.1:3100:3100"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  promtail:
+    image: grafana/promtail:2.9.7
+    container_name: vpsconnect-promtail
+    restart: unless-stopped
+    volumes:
+      - ./config/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+      - /root/.pm2/logs:/pm2logs:ro
+      - promtail-pos:/tmp/positions
+    command: -config.file=/etc/promtail/promtail.yml
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  redis:
+    image: redis:7-alpine
+    container_name: vpsconnect-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+      --loglevel warning
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vpsconnect-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - VM_URL=http://victoriametrics:8428
+      - LOKI_URL=http://loki:3100
+      - REDIS_URL=redis://redis:6379
+      - PM2_HOME=/root/.pm2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /root/.pm2:/root/.pm2:ro
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      - victoriametrics
+      - loki
+      - redis
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vpsconnect-frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=/api
+      - NEXT_PUBLIC_WS_URL=/ws
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  vm-data:
+  loki-data:
+  promtail-pos:
