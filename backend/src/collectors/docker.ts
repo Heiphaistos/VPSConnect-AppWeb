@@ -21,6 +21,32 @@ function dockerRequest(path: string): Promise<unknown> {
   })
 }
 
+function dockerPost(apiPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { socketPath: SOCKET, path: apiPath, method: 'POST', headers: { Host: 'localhost', 'Content-Length': '0' } },
+      (res) => { res.resume(); res.on('end', () => resolve(res.statusCode ?? 500)) },
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+export async function startContainer(id: string): Promise<void> {
+  const status = await dockerPost(`/containers/${id}/start`)
+  if (status >= 400 && status !== 304) throw new Error(`Docker start failed: ${status}`)
+}
+
+export async function stopContainer(id: string): Promise<void> {
+  const status = await dockerPost(`/containers/${id}/stop`)
+  if (status >= 400 && status !== 304) throw new Error(`Docker stop failed: ${status}`)
+}
+
+export async function restartContainer(id: string): Promise<void> {
+  const status = await dockerPost(`/containers/${id}/restart`)
+  if (status >= 400) throw new Error(`Docker restart failed: ${status}`)
+}
+
 function mapState(status: string, exitCode?: number): ContainerState {
   if (status === 'running') return 'deployed'
   if (status === 'restarting' || status === 'created' || status === 'paused') return 'pending'

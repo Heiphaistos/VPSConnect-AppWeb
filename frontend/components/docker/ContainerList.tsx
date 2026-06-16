@@ -4,12 +4,43 @@ import { useState } from 'react'
 import { StateBadge, PercentBar } from '@/components/ui/Badge'
 import { formatBytes } from '@/lib/utils'
 import type { Container } from '@/lib/types'
-import { ChevronDown, ChevronRight, Terminal } from 'lucide-react'
+import { ChevronDown, ChevronRight, Terminal, Play, Square, RotateCw } from 'lucide-react'
 import { LogViewer } from './LogViewer'
+import { apiFetch } from '@/lib/api'
+
+type ActionState = 'idle' | 'loading' | 'done' | 'error'
+
+function ActionButton({
+  icon: Icon,
+  label,
+  onClick,
+  danger,
+}: {
+  icon: React.ElementType
+  label: string
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      title={label}
+      className={`flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-mono transition-all
+        ${danger
+          ? 'border-crimson/40 text-crimson/70 hover:bg-crimson/10 hover:text-crimson hover:border-crimson'
+          : 'border-border text-text-dim bg-base-700 hover:border-mint/40 hover:text-mint hover:bg-base-600'
+        }`}
+    >
+      <Icon size={11} />
+      <span>{label}</span>
+    </button>
+  )
+}
 
 export function ContainerList({ containers }: { containers: Container[] }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [logsOpen, setLogsOpen] = useState<string | null>(null)
+  const [actions, setActions] = useState<Record<string, ActionState>>({})
 
   if (!containers.length) {
     return (
@@ -17,6 +48,17 @@ export function ContainerList({ containers }: { containers: Container[] }) {
         <p className="font-mono text-xs text-text-dim">Aucun conteneur détecté</p>
       </div>
     )
+  }
+
+  async function runAction(id: string, action: 'start' | 'stop' | 'restart') {
+    setActions((prev) => ({ ...prev, [id + action]: 'loading' }))
+    try {
+      await apiFetch(`/docker/containers/${id}/${action}`, { method: 'POST' })
+      setActions((prev) => ({ ...prev, [id + action]: 'done' }))
+    } catch {
+      setActions((prev) => ({ ...prev, [id + action]: 'error' }))
+    }
+    setTimeout(() => setActions((prev) => ({ ...prev, [id + action]: 'idle' })), 3000)
   }
 
   return (
@@ -62,19 +104,41 @@ export function ContainerList({ containers }: { containers: Container[] }) {
               <p className="font-mono text-xs text-cyan-400">↓ {formatBytes(c.networkIn)}</p>
             </div>
 
-            {/* Logs button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); setLogsOpen(logsOpen === c.id ? null : c.id) }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-base-700 border border-border hover:border-cyan-500/40 hover:bg-base-600 transition-all text-text-dim hover:text-cyan-400"
-            >
-              <Terminal size={12} />
-              <span className="font-mono text-xs">Logs</span>
-            </button>
+            {/* Actions */}
+            <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+              {c.state !== 'deployed' && (
+                <ActionButton
+                  icon={actions[c.id + 'start'] === 'loading' ? RotateCw : Play}
+                  label={actions[c.id + 'start'] === 'loading' ? '...' : 'Start'}
+                  onClick={() => runAction(c.id, 'start')}
+                />
+              )}
+              {c.state === 'deployed' && (
+                <ActionButton
+                  icon={actions[c.id + 'stop'] === 'loading' ? RotateCw : Square}
+                  label={actions[c.id + 'stop'] === 'loading' ? '...' : 'Stop'}
+                  onClick={() => runAction(c.id, 'stop')}
+                  danger
+                />
+              )}
+              <ActionButton
+                icon={actions[c.id + 'restart'] === 'loading' ? RotateCw : RotateCw}
+                label={actions[c.id + 'restart'] === 'loading' ? '...' : 'Restart'}
+                onClick={() => runAction(c.id, 'restart')}
+              />
+              <button
+                onClick={(e) => { e.stopPropagation(); setLogsOpen(logsOpen === c.id ? null : c.id) }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-base-700 border border-border hover:border-cyan-500/40 hover:bg-base-600 transition-all text-text-dim hover:text-cyan-400"
+              >
+                <Terminal size={12} />
+                <span className="font-mono text-xs">Logs</span>
+              </button>
+            </div>
           </div>
 
           {/* Expanded details */}
           {expanded === c.id && (
-            <div className="border-t border-border px-4 py-3 bg-base-900/50 grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="border-t border-border px-4 py-3 bg-base-900/50 grid grid-cols-2 sm:grid-cols-5 gap-4">
               <div>
                 <p className="font-mono text-xs text-text-dim mb-0.5">ID</p>
                 <p className="font-mono text-xs text-text-secondary">{c.shortId}</p>
@@ -94,6 +158,10 @@ export function ContainerList({ containers }: { containers: Container[] }) {
               <div>
                 <p className="font-mono text-xs text-text-dim mb-0.5">PORTS</p>
                 <p className="font-mono text-xs text-text-secondary">{c.ports.join(', ') || '—'}</p>
+              </div>
+              <div>
+                <p className="font-mono text-xs text-text-dim mb-0.5">DÉMARRÉ</p>
+                <p className="font-mono text-xs text-text-secondary">{new Date(c.startedAt).toLocaleDateString('fr-FR')}</p>
               </div>
             </div>
           )}

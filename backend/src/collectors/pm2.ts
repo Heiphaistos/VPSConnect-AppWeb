@@ -77,6 +77,27 @@ export async function listProcesses(): Promise<Pm2Process[]> {
   })
 }
 
+export async function startProcess(name: string): Promise<void> {
+  await ensureConnected()
+  return new Promise((resolve, reject) => {
+    pm2.restart(name, (err) => { if (err) reject(err); else resolve() })
+  })
+}
+
+export async function stopProcess(name: string): Promise<void> {
+  await ensureConnected()
+  return new Promise((resolve, reject) => {
+    pm2.stop(name, (err) => { if (err) reject(err); else resolve() })
+  })
+}
+
+export async function restartProcess(name: string): Promise<void> {
+  await ensureConnected()
+  return new Promise((resolve, reject) => {
+    pm2.restart(name, (err) => { if (err) reject(err); else resolve() })
+  })
+}
+
 export async function streamPm2Logs(
   processName: string,
   onData: (line: string) => void,

@@ -9,6 +9,7 @@ import {
   Cpu,
   LogOut,
   Radio,
+  FolderOpen,
 } from 'lucide-react'
 import { useSnapshot } from '@/hooks/useMetrics'
 
@@ -24,6 +25,7 @@ export function Sidebar() {
     { href: '/', label: 'Dashboard', icon: LayoutDashboard, alerts: 0 },
     { href: '/docker', label: 'Docker', icon: Container, alerts: dockerAlerts },
     { href: '/pm2', label: 'PM2', icon: Cpu, alerts: pm2Alerts },
+    { href: '/files', label: 'Fichiers', icon: FolderOpen, alerts: 0 },
   ]
 
   async function logout() {

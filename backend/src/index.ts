@@ -10,6 +10,7 @@ import { metricsRoutes } from './routes/metrics.js'
 import { dockerRoutes } from './routes/docker.js'
 import { pm2Routes } from './routes/pm2.js'
 import { logsRoutes } from './routes/logs.js'
+import { filesRoutes } from './routes/files.js'
 import { startCollector } from './jobs/collector.js'
 
 // Fail fast: JWT_SECRET must be set and strong enough
@@ -91,6 +92,7 @@ await app.register(metricsRoutes, { prefix: '/api/metrics' })
 await app.register(dockerRoutes, { prefix: '/api/docker' })
 await app.register(pm2Routes, { prefix: '/api/pm2' })
 await app.register(logsRoutes, { prefix: '/ws' })
+await app.register(filesRoutes, { prefix: '/api/files' })
 
 // Start background metric collector
 startCollector()

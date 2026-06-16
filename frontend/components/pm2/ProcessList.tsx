@@ -4,11 +4,44 @@ import { useState } from 'react'
 import { StateBadge, PercentBar } from '@/components/ui/Badge'
 import { formatBytes, formatDuration } from '@/lib/utils'
 import type { Pm2Process } from '@/lib/types'
-import { Terminal, RefreshCw } from 'lucide-react'
+import { Terminal, RefreshCw, Play, Square, RotateCw } from 'lucide-react'
 import { Pm2LogViewer } from './Pm2LogViewer'
+import { apiFetch } from '@/lib/api'
+
+type ActionState = 'idle' | 'loading' | 'done' | 'error'
+
+function ActionButton({
+  icon: Icon,
+  label,
+  onClick,
+  danger,
+  spinning,
+}: {
+  icon: React.ElementType
+  label: string
+  onClick: () => void
+  danger?: boolean
+  spinning?: boolean
+}) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      title={label}
+      className={`flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-mono transition-all
+        ${danger
+          ? 'border-crimson/40 text-crimson/70 hover:bg-crimson/10 hover:text-crimson hover:border-crimson'
+          : 'border-border text-text-dim bg-base-700 hover:border-mint/40 hover:text-mint hover:bg-base-600'
+        }`}
+    >
+      <Icon size={11} className={spinning ? 'animate-spin' : ''} />
+      <span>{label}</span>
+    </button>
+  )
+}
 
 export function ProcessList({ processes }: { processes: Pm2Process[] }) {
   const [logsOpen, setLogsOpen] = useState<string | null>(null)
+  const [actions, setActions] = useState<Record<string, ActionState>>({})
 
   if (!processes.length) {
     return (
@@ -16,6 +49,18 @@ export function ProcessList({ processes }: { processes: Pm2Process[] }) {
         <p className="font-mono text-xs text-text-dim">Aucun processus PM2 détecté</p>
       </div>
     )
+  }
+
+  async function runAction(name: string, action: 'start' | 'stop' | 'restart') {
+    const key = name + action
+    setActions((prev) => ({ ...prev, [key]: 'loading' }))
+    try {
+      await apiFetch(`/pm2/processes/${encodeURIComponent(name)}/${action}`, { method: 'POST' })
+      setActions((prev) => ({ ...prev, [key]: 'done' }))
+    } catch {
+      setActions((prev) => ({ ...prev, [key]: 'error' }))
+    }
+    setTimeout(() => setActions((prev) => ({ ...prev, [key]: 'idle' })), 3000)
   }
 
   return (
@@ -65,14 +110,39 @@ export function ProcessList({ processes }: { processes: Pm2Process[] }) {
               </p>
             </div>
 
-            {/* Logs */}
-            <button
-              onClick={() => setLogsOpen(logsOpen === p.name ? null : p.name)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-base-700 border border-border hover:border-cyan-500/40 hover:bg-base-600 transition-all text-text-dim hover:text-cyan-400"
-            >
-              <Terminal size={12} />
-              <span className="font-mono text-xs">Logs</span>
-            </button>
+            {/* Actions */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {p.state !== 'deployed' && (
+                <ActionButton
+                  icon={Play}
+                  label={actions[p.name + 'start'] === 'loading' ? '...' : 'Start'}
+                  spinning={actions[p.name + 'start'] === 'loading'}
+                  onClick={() => runAction(p.name, 'start')}
+                />
+              )}
+              {p.state === 'deployed' && (
+                <ActionButton
+                  icon={Square}
+                  label={actions[p.name + 'stop'] === 'loading' ? '...' : 'Stop'}
+                  spinning={actions[p.name + 'stop'] === 'loading'}
+                  onClick={() => runAction(p.name, 'stop')}
+                  danger
+                />
+              )}
+              <ActionButton
+                icon={RotateCw}
+                label={actions[p.name + 'restart'] === 'loading' ? '...' : 'Restart'}
+                spinning={actions[p.name + 'restart'] === 'loading'}
+                onClick={() => runAction(p.name, 'restart')}
+              />
+              <button
+                onClick={() => setLogsOpen(logsOpen === p.name ? null : p.name)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-base-700 border border-border hover:border-cyan-500/40 hover:bg-base-600 transition-all text-text-dim hover:text-cyan-400"
+              >
+                <Terminal size={12} />
+                <span className="font-mono text-xs">Logs</span>
+              </button>
+            </div>
           </div>
 
           {/* Log viewer */}
