@@ -11,9 +11,9 @@ import { dockerRoutes } from './routes/docker.js'
 import { pm2Routes } from './routes/pm2.js'
 import { logsRoutes } from './routes/logs.js'
 import { filesRoutes } from './routes/files.js'
+import { consoleRoutes } from './routes/console.js'
 import { startCollector } from './jobs/collector.js'
 
-// Fail fast: JWT_SECRET must be set and strong enough
 const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
   console.error('[FATAL] JWT_SECRET must be set and at least 32 characters')
@@ -38,37 +38,32 @@ const app = Fastify({
 
 await redis.connect()
 
-// Security headers (disable CSP — managed by Next.js frontend)
 await app.register(helmet, {
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 })
 
-// Global rate limit (in-memory — simple and reliable)
 await app.register(rateLimit, {
   global: true,
   max: 200,
   timeWindow: '1 minute',
 })
 
-// CORS: accept comma-separated list of allowed origins
 const allowedOrigins = (process.env.FRONTEND_URL ?? 'http://localhost:3000')
   .split(',')
   .map((u) => u.trim())
 
 await app.register(cors, {
   origin: (origin, cb) => {
-    // Allow same-origin requests (no Origin header) and listed origins
     if (!origin || allowedOrigins.includes(origin)) {
       cb(null, true)
     } else {
-      // Reject without error — browser enforces CORS, server returns 200 without CORS headers
       cb(null, false)
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
 })
 
 await app.register(cookie, {
@@ -81,20 +76,16 @@ await app.register(websocket, {
   },
 })
 
-// Health check (no auth)
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
 
-// Auth routes (no auth middleware) — stricter rate limit applied inside
 await app.register(authRoutes, { prefix: '/api/auth' })
-
-// Protected routes — auth checked inside each plugin
 await app.register(metricsRoutes, { prefix: '/api/metrics' })
 await app.register(dockerRoutes, { prefix: '/api/docker' })
 await app.register(pm2Routes, { prefix: '/api/pm2' })
-await app.register(logsRoutes, { prefix: '/ws' })
 await app.register(filesRoutes, { prefix: '/api/files' })
+await app.register(logsRoutes, { prefix: '/ws' })
+await app.register(consoleRoutes, { prefix: '/ws' })
 
-// Start background metric collector
 startCollector()
 
 const port = Number(process.env.PORT ?? 4000)

@@ -97,9 +97,14 @@ services:
       - LOKI_URL=http://loki:3100
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - PM2_HOME=/root/.pm2
+      - SHELL=/bin/bash
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /root/.pm2:/root/.pm2:ro
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /opt:/opt:rw
+      - /var/log:/var/log:ro
+      - /etc:/etc:ro
+      - /home:/home:ro
+      - /root:/root:rw
     ports:
       - "127.0.0.1:4010:4000"
     depends_on:
@@ -120,7 +125,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
 
   frontend:
     build:

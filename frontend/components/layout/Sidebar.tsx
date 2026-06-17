@@ -10,6 +10,7 @@ import {
   LogOut,
   Radio,
   FolderOpen,
+  TerminalSquare,
 } from 'lucide-react'
 import { useSnapshot } from '@/hooks/useMetrics'
 
@@ -26,6 +27,7 @@ export function Sidebar() {
     { href: '/docker', label: 'Docker', icon: Container, alerts: dockerAlerts },
     { href: '/pm2', label: 'PM2', icon: Cpu, alerts: pm2Alerts },
     { href: '/files', label: 'Fichiers', icon: FolderOpen, alerts: 0 },
+    { href: '/console', label: 'Console', icon: TerminalSquare, alerts: 0 },
   ]
 
   async function logout() {
