@@ -1,316 +1,178 @@
-# VPSConnect — Tableau de bord de monitoring VPS
+<div align="center">
+  <h1>💬 ForgeChat</h1>
+  <p><strong>Clone Discord self-hosted — serveurs, salons et messages en temps réel, hébergez votre propre espace de communication.</strong></p>
 
-> Stack de monitoring auto-hébergé pour VPS : métriques système, logs, terminal SSH intégré et tableau de bord temps réel.
-
-[![Backend](https://img.shields.io/badge/Backend-Fastify%20%2B%20TypeScript%20v1.3-blue)](#)
-[![Frontend](https://img.shields.io/badge/Frontend-Next.js%2014%20%2B%20React%2018-black)](#)
-[![Metrics](https://img.shields.io/badge/Metrics-VictoriaMetrics-orange)](#)
-[![Logs](https://img.shields.io/badge/Logs-Loki%20%2B%20Promtail-yellow)](#)
-[![License](https://img.shields.io/badge/License-MIT-green)](#)
-
----
-
-## Vue d'ensemble
-
-VPSConnect est une solution de monitoring complète pour serveurs Linux auto-hébergés. Elle agrège métriques système, logs applicatifs, et expose un terminal web pour administrer le serveur sans quitter le navigateur.
-
-**Composants :** VictoriaMetrics · Loki · Promtail · Fastify API · Next.js Dashboard · Redis · Terminal xterm.js
+  ![Version](https://img.shields.io/badge/version-3.0.0-blue)
+  ![Stack](https://img.shields.io/badge/stack-Rust%20%2B%20Axum%20%2B%20React%20%2B%20WebSocket-purple)
+  ![License](https://img.shields.io/badge/license-MIT-green)
+  ![Status](https://img.shields.io/badge/status-production-brightgreen)
+</div>
 
 ---
 
-## Fonctionnalités
+## 📋 Description
 
-### Tableau de bord temps réel
-- CPU, RAM, disque, réseau en temps réel via WebSocket
-- Graphiques historiques (rétention configurable, défaut 2 jours)
-- Alertes sur seuil (CPU > X%, disque > Y%)
-- Vue multi-services PM2
+ForgeChat est une application de messagerie temps réel self-hosted inspirée de Discord. Elle permet de créer des serveurs, des salons textuels et d'échanger des messages instantanément via WebSocket. Conçue avec Rust + Axum pour le backend haute performance et React pour le frontend, elle s'appuie sur une authentification robuste avec cookies HttpOnly et système de tickets WebSocket.
 
-### Logs centralisés
-- Agrégation des logs via Promtail → Loki
-- Recherche full-text dans les logs
-- Filtrage par service, niveau (INFO/WARN/ERROR), date
-
-### Terminal web
-- Terminal SSH intégré via xterm.js + node-pty
-- Authentification requise (JWT)
-- Session isolée par utilisateur
-
-### Gestion des processus
-- Contrôle des processus PM2 (start, stop, restart, logs)
-- Statut et uptime de chaque service
-- Redémarrage automatique si crash
-
-### Collecteurs de métriques
-- systeminformation (CPU, RAM, disque, réseau, température)
-- Jobs de collecte planifiés en arrière-plan
+**Production** : [https://forgechat.heiphaistos.org](https://forgechat.heiphaistos.org)
 
 ---
 
-## Architecture
+## ✨ Fonctionnalités
+
+- **Serveurs et salons** : Création de serveurs multi-salons (texte, annonce) avec gestion des membres
+- **Messages temps réel** : WebSocket avec broadcast vers tous les membres connectés du serveur
+- **Gestion d'amis** : Demandes d'amitié, liste, notifications
+- **Notifications** : Indicateurs de messages non lus, last_read par salon
+- **Upload de fichiers** : Images et pièces jointes dans les messages
+- **Auth sécurisée** : Cookies HttpOnly + JWT signé + système de tickets ws-ticket pour WebSocket
+- **Support WebRTC** : Serveur TURN/STUN coturn intégré pour la voix et la vidéo
+- **Interface réactive** : Sidebar serveurs, liste des salons, messages paginés
+
+---
+
+## 🛠️ Stack technique
+
+| Couche | Technologies |
+|--------|-------------|
+| Frontend | React 19 · TypeScript · Vite · TailwindCSS |
+| Backend | Rust · Axum · Tokio · tower |
+| Base de données | PostgreSQL · SQLx |
+| Temps réel | WebSocket (tokio-tungstenite) |
+| Auth | JWT · HttpOnly cookies · ws-ticket |
+| Médias | coturn 4.6.1 (TURN/STUN) |
+| Déploiement | Docker · Docker Compose · nginx |
+
+---
+
+## 🚀 Installation & Déploiement
+
+### Prérequis
+
+- Docker >= 24
+- Docker Compose >= 2.x
+- Un domaine avec certificat SSL (TURN nécessite TLS)
+
+### Variables d'environnement
+
+Créer un fichier `.env` à la racine :
+
+```env
+DATABASE_URL=postgresql://forgechat:password@db:5432/forgechat
+JWT_SECRET=votre_secret_jwt_tres_long_minimum_32_chars
+JWT_EXPIRES_IN=900
+REFRESH_SECRET=votre_secret_refresh_different
+TURN_URL=turns:forgechat.heiphaistos.org:5349
+TURN_USERNAME=turn_user
+TURN_PASSWORD=turn_password
+UPLOAD_MAX_SIZE_MB=10
+```
+
+### Démarrage
+
+```bash
+# Cloner le dépôt
+git clone https://github.com/Heiphaistos/PureConnect-AppWeb.git
+cd PureConnect-AppWeb
+
+# Lancer les conteneurs (backend, frontend, db, coturn)
+docker compose up -d
+
+# Vérifier les migrations
+docker compose exec backend sqlx migrate run
+
+# Logs en temps réel
+docker compose logs -f backend
+```
+
+### Mise à jour production
+
+```bash
+docker compose pull
+docker compose up -d --force-recreate --no-deps backend frontend
+```
+
+### Configuration nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name forgechat.heiphaistos.org;
+
+    location /api {
+        proxy_pass http://127.0.0.1:3020;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:3020;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3021;
+    }
+}
+```
+
+---
+
+## 📁 Structure du projet
 
 ```
 PureConnect-AppWeb/
-├── backend/                    # API Fastify (Node.js / TypeScript)
-│   └── src/
-│       ├── index.ts            # Entrée serveur Fastify
-│       ├── redis.ts            # Client Redis
-│       ├── types.ts            # Types TypeScript partagés
-│       ├── collectors/         # Collecteurs de métriques (systeminformation, PM2)
-│       ├── jobs/               # Tâches planifiées
-│       ├── middleware/         # Auth JWT, rate limit
-│       └── routes/             # Endpoints REST + WebSocket
-├── frontend/                   # Next.js 14 App Router
-│   ├── app/
-│   │   ├── (dashboard)/        # Pages du tableau de bord (auth requise)
-│   │   ├── login/              # Page de connexion
-│   │   ├── layout.tsx
-│   │   └── globals.css
-│   ├── components/             # Composants React
-│   ├── hooks/                  # Hooks SWR / WebSocket
-│   └── lib/
-├── config/
-│   ├── loki.yml                # Configuration Loki
-│   └── promtail.yml            # Configuration Promtail (scrape logs)
-├── scripts/                    # Scripts de déploiement et maintenance
-├── docker-compose.yml          # Orchestration complète
-└── .env.example
+├── backend/           # Rust + Axum
+│   ├── src/
+│   │   ├── routes/    # Endpoints REST (auth, servers, channels, messages)
+│   │   ├── ws/        # WebSocket handler + broadcast
+│   │   ├── models/    # Structs SQLx
+│   │   └── middleware/# Auth JWT, rate limiting
+│   └── migrations/    # SQLx migrations PostgreSQL
+├── frontend/          # React + TypeScript
+│   ├── src/
+│   │   ├── components/# ServerList, ChannelList, MessageList
+│   │   ├── hooks/     # useWebSocket, useAuth, useMessages
+│   │   └── pages/     # Login, App principale
+└── docker-compose.yml
 ```
 
 ---
 
-## Stack technique
+## 🔌 API Reference
 
-### Backend (`backend/`)
-
-| Composant | Technologie |
-|-----------|-------------|
-| Framework | Fastify 4 + TypeScript |
-| Auth | JWT + bcrypt |
-| Cache | Redis (ioredis) |
-| Métriques système | systeminformation |
-| Gestion processus | PM2 API |
-| Terminal web | node-pty + WebSocket |
-| Rate limiting | @fastify/rate-limit |
-| Headers sécurité | @fastify/helmet |
-
-### Frontend (`frontend/`)
-
-| Composant | Technologie |
-|-----------|-------------|
-| Framework | Next.js 14 (App Router) |
-| UI | React 18 + Tailwind CSS |
-| Graphiques | Recharts |
-| Data fetching | SWR |
-| Terminal | @xterm/xterm + @xterm/addon-fit |
-| Icônes | Lucide React |
-
-### Infrastructure
-
-| Service | Rôle | Port interne |
-|---------|------|-------------|
-| VictoriaMetrics | Stockage métriques TSDB | 8428 |
-| Loki | Stockage et indexation des logs | 3100 |
-| Promtail | Collecteur de logs → Loki | — |
-| Redis | Cache et pub/sub | 6379 |
-| Backend | API REST + WebSocket | 3001 |
-| Frontend | Dashboard Next.js | 3000 |
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `POST` | `/api/auth/register` | Créer un compte |
+| `POST` | `/api/auth/login` | Connexion (retourne cookie) |
+| `POST` | `/api/auth/logout` | Déconnexion |
+| `GET` | `/api/servers` | Serveurs de l'utilisateur |
+| `POST` | `/api/servers` | Créer un serveur |
+| `GET` | `/api/servers/:id/channels` | Salons d'un serveur |
+| `GET` | `/api/channels/:id/messages` | Messages paginés |
+| `GET` | `/api/ws?ticket=...` | Connexion WebSocket |
 
 ---
 
-## Prérequis
+## 📸 Aperçu
 
-- Docker & Docker Compose v2
-- Linux (VPS ou machine locale)
-- Node.js 20+ (pour développement local)
+![screenshot](./docs/screenshot.png)
 
 ---
 
-## Installation
+## 🔐 Sécurité
 
-### 1. Cloner
-
-```bash
-git clone https://github.com/votre-org/vpsconnect /opt/vpsconnect
-cd /opt/vpsconnect
-```
-
-### 2. Configurer les secrets
-
-```bash
-cp .env.example .env
-```
-
-Éditer `.env` :
-
-```env
-# JWT — générer avec: openssl rand -hex 32
-JWT_SECRET=votre_secret_jwt_ici
-
-# Admin — générer le hash avec:
-# node -e "const b=require('bcrypt');b.hash('votre_mdp',12).then(console.log)"
-ADMIN_PASSWORD_HASH=$2b$12$votre_hash_bcrypt_ici
-
-# Cookie sécurisé (true uniquement avec HTTPS)
-COOKIE_SECURE=false
-
-# Redis — générer avec: openssl rand -hex 24
-REDIS_PASSWORD=votre_mot_de_passe_redis
-
-# CORS — URL(s) autorisées (séparées par virgule)
-FRONTEND_URL=http://localhost:3000
-```
-
-### 3. Lancer
-
-```bash
-docker compose up -d
-
-# Vérifier que tout démarre
-docker compose ps
-docker compose logs -f
-```
-
-Accès : `http://localhost:3000`
+- Cookies HttpOnly + Secure + SameSite=Strict pour les tokens JWT
+- Système de tickets à usage unique pour l'authentification WebSocket
+- Validation de la propriété des ressources (IDOR prevention)
+- Rate limiting sur les endpoints d'authentification
+- Mots de passe hashés bcrypt cost 12
+- Timeouts Axum (30s) + DefaultBodyLimit (1MB)
 
 ---
 
-## Développement local
+## 📝 Licence
 
-### Backend
-
-```bash
-cd backend
-npm install
-
-# Variables d'environnement
-export JWT_SECRET="dev_secret"
-export REDIS_URL="redis://:motdepasse@localhost:6379"
-
-# Mode dev (hot reload)
-npm run dev
-# → http://localhost:3001
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-
-npm run dev
-# → http://localhost:3000
-```
-
----
-
-## Variables d'environnement
-
-| Variable | Description | Exemple |
-|----------|-------------|---------|
-| `JWT_SECRET` | Secret JWT (min 32 chars) | `openssl rand -hex 32` |
-| `ADMIN_PASSWORD_HASH` | Hash bcrypt du mot de passe admin | `bcrypt.hash('mdp', 12)` |
-| `COOKIE_SECURE` | `true` si HTTPS activé | `false` |
-| `REDIS_PASSWORD` | Mot de passe Redis | `openssl rand -hex 24` |
-| `FRONTEND_URL` | URL(s) CORS autorisées | `https://votre-domaine.com` |
-| `VM_URL` | URL interne VictoriaMetrics | `http://victoriametrics:8428` |
-| `LOKI_URL` | URL interne Loki | `http://loki:3100` |
-| `REDIS_URL` | URL connexion Redis | `redis://:mdp@redis:6379` |
-
----
-
-## Configuration Promtail
-
-Promtail collecte les logs des conteneurs Docker et les envoie à Loki.
-
-```yaml
-# config/promtail.yml — exemple
-server:
-  http_listen_port: 9080
-
-clients:
-  - url: http://loki:3100/loki/api/v1/push
-
-scrape_configs:
-  - job_name: docker
-    docker_sd_configs:
-      - host: unix:///var/run/docker.sock
-        refresh_interval: 5s
-    relabel_configs:
-      - source_labels: ['__meta_docker_container_name']
-        target_label: 'container'
-```
-
----
-
-## API REST
-
-```
-POST   /api/auth/login           # Connexion admin
-POST   /api/auth/logout          # Déconnexion
-GET    /api/auth/me              # Profil courant
-
-GET    /api/metrics/current      # Métriques système en temps réel
-GET    /api/metrics/history      # Historique (query VictoriaMetrics)
-
-GET    /api/logs                 # Logs récents (query Loki)
-GET    /api/logs/search          # Recherche dans les logs
-
-GET    /api/processes            # Liste des processus PM2
-POST   /api/processes/:name/restart  # Redémarrer un processus
-
-WS     /api/terminal             # Terminal web (xterm + node-pty)
-WS     /api/metrics/stream       # Stream métriques en temps réel
-```
-
----
-
-## Déploiement production
-
-```yaml
-# docker-compose.yml — extrait configuration mémoire
-services:
-  promtail:
-    deploy:
-      resources:
-        limits:
-          memory: 256M        # Min 256M recommandé
-
-  victoriametrics:
-    command:
-      - -retentionPeriod=2d   # Adapter selon l'espace disque
-      - -httpListenAddr=:8428
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-```
-
-```bash
-# Démarrer en production
-docker compose up -d --build
-
-# Mise à jour
-git pull && docker compose up -d --build
-
-# Backup données
-docker compose exec victoriametrics \
-  vmbackup -storageDataPath=/victoria-metrics-data -dst=file:///backup/vm
-```
-
----
-
-## Sécurité
-
-- Un seul compte admin (pas de registration publique)
-- JWT httpOnly cookie avec `SameSite=Strict`
-- Rate limiting sur `/api/auth/login` (protection brute-force)
-- Terminal web accessible uniquement après authentification
-- Redis protégé par mot de passe
-- Tous les ports internes liés à `127.0.0.1` uniquement
-
----
-
-## Licence
-
-MIT — Voir [LICENSE](LICENSE) pour les détails.
+MIT — © 2026 Heiphaistos
