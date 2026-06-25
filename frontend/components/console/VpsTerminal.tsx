@@ -3,11 +3,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { apiFetch } from '@/lib/api'
 
 export function VpsTerminal() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const [hostname, setHostname] = useState<string>('vps')
   const sessionRef = useRef<{ term: Terminal; ws: WebSocket; fit: FitAddon; ro: ResizeObserver } | null>(null)
+
+  // Chemin à ouvrir automatiquement (passé via ?cd= depuis l'explorateur)
+  const initialCd = useRef<string | null>(
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('cd')
+      : null,
+  )
+
+  useEffect(() => {
+    apiFetch<{ system?: { hostname?: string } }>('/metrics/snapshot')
+      .then((d) => { if (d.system?.hostname) setHostname(d.system.hostname) })
+      .catch(() => null)
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -43,6 +58,14 @@ export function VpsTerminal() {
       setStatus('connected')
       const dims = fit.proposeDimensions()
       if (dims) ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
+      // cd automatique si param ?cd= passé depuis l'explorateur
+      if (initialCd.current) {
+        const cdPath = initialCd.current
+        initialCd.current = null
+        setTimeout(() => {
+          ws.send(JSON.stringify({ type: 'input', data: `cd '${cdPath.replace(/'/g, "'\\''")}'\r` }))
+        }, 300)
+      }
     }
 
     ws.onmessage = (e) => {
@@ -104,12 +127,12 @@ export function VpsTerminal() {
             status === 'connecting' ? 'bg-amber-400 animate-pulse' : 'bg-crimson'
           }`} />
           <span className="font-mono text-xs text-text-dim">
-            {status === 'connected' ? 'root@vps — bash' :
+            {status === 'connected' ? `root@${hostname} — bash` :
              status === 'connecting' ? 'Connexion en cours...' : 'Déconnecté'}
           </span>
         </div>
         <span className="font-mono text-[10px] text-text-dim/40">
-          /opt · pm2 · docker disponibles
+          /root · pm2 · docker disponibles
         </span>
       </div>
 

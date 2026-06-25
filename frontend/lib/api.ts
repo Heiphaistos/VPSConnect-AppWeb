@@ -25,3 +25,34 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 export function createWebSocket(path: string): WebSocket {
   return new WebSocket(`${WS_BASE}${path}`)
 }
+
+export async function apiDownload(apiPath: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${apiPath}`, { credentials: 'include' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? `HTTP ${res.status}`)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+export async function apiUpload(destPath: string, filename: string, data: ArrayBuffer): Promise<void> {
+  const url = `${API_BASE}/files/upload?path=${encodeURIComponent(destPath)}&name=${encodeURIComponent(filename)}`
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: data,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? `HTTP ${res.status}`)
+  }
+}

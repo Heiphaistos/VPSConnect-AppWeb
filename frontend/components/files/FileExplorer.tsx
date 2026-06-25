@@ -1,74 +1,16 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { apiFetch } from '@/lib/api'
 import {
-  Folder, FileText, File, FileCode, FileCog, FileArchive,
-  ArrowLeft, Home, RefreshCw, ChevronRight, Eye,
-  X, Edit3, Trash2, Save, AlertTriangle,
+  ArrowLeft, ArrowRight, Home, RefreshCw, ChevronRight, X,
+  AlertTriangle, Search, Star, StarOff, Plus, FolderPlus, FilePlus,
+  Upload, Loader2,
 } from 'lucide-react'
+import { apiFetch, apiDownload, apiUpload } from '@/lib/api'
+import { FileList, type FileEntry, type ListResponse, fmtSize } from './FileList'
+import { FileViewer, type ReadResponse } from './FileViewer'
 
-interface FileEntry {
-  name: string
-  isDir: boolean
-  isSymlink: boolean
-  size: number
-  mtime: string
-  mode: string
-}
-
-interface ListResponse {
-  path: string
-  parent: string | null
-  entries: FileEntry[]
-}
-
-interface ReadResponse {
-  path: string
-  content: string
-  size: number
-  mtime: string
-}
-
-function fmtSize(bytes: number): string {
-  if (bytes === 0) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`
-  return `${(bytes / 1073741824).toFixed(1)} GB`
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
-}
-
-function FileIcon({ entry }: { entry: FileEntry }) {
-  if (entry.isDir) return <Folder size={14} className="text-amber-400 flex-shrink-0" />
-  const ext = entry.name.split('.').pop()?.toLowerCase() ?? ''
-  if (['ts', 'js', 'tsx', 'jsx', 'py', 'go', 'rs', 'rb', 'php', 'sh', 'bash'].includes(ext))
-    return <FileCode size={14} className="text-cyan-400 flex-shrink-0" />
-  if (['log', 'txt', 'md'].includes(ext))
-    return <FileText size={14} className="text-text-secondary flex-shrink-0" />
-  if (['yml', 'yaml', 'json', 'toml', 'ini', 'conf', 'cfg', 'env'].includes(ext))
-    return <FileCog size={14} className="text-mint flex-shrink-0" />
-  if (['gz', 'tar', 'zip', '7z', 'bz2', 'xz'].includes(ext))
-    return <FileArchive size={14} className="text-amber-400/70 flex-shrink-0" />
-  return <File size={14} className="text-text-dim flex-shrink-0" />
-}
-
-const TEXT_EXTS = new Set([
-  'log', 'txt', 'md', 'sh', 'bash', 'conf', 'yml', 'yaml', 'json', 'env',
-  'ts', 'js', 'tsx', 'jsx', 'toml', 'ini', 'cfg', 'html', 'css', 'xml',
-  'sql', 'py', 'rb', 'go', 'rs', 'php', 'lock', 'gitignore', 'dockerfile',
-  'nginx', 'cfg', 'config',
-])
-
-function isReadable(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return TEXT_EXTS.has(ext) || !name.includes('.') || name.startsWith('.')
-}
-
-// ─── Breadcrumb ────────────────────────────────────────────────────────────
+// ─── Breadcrumb ──────────────────────────────────────────────────────────────
 function Breadcrumb({ currentPath, onNavigate }: { currentPath: string; onNavigate: (p: string) => void }) {
   const segs = currentPath.split('/').filter(Boolean)
   return (
@@ -84,8 +26,7 @@ function Breadcrumb({ currentPath, onNavigate }: { currentPath: string; onNaviga
               onClick={() => !isLast && onNavigate(p)}
               className={isLast
                 ? 'text-text-primary cursor-default'
-                : 'hover:text-cyan-400 transition-colors cursor-pointer'
-              }
+                : 'hover:text-cyan-400 transition-colors cursor-pointer'}
             >
               {seg}
             </button>
@@ -96,7 +37,7 @@ function Breadcrumb({ currentPath, onNavigate }: { currentPath: string; onNaviga
   )
 }
 
-// ─── Delete confirmation ────────────────────────────────────────────────────
+// ─── Delete confirmation ──────────────────────────────────────────────────────
 function ConfirmDelete({ path, onConfirm, onCancel }: { path: string; onConfirm: () => void; onCancel: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -119,13 +60,77 @@ function ConfirmDelete({ path, onConfirm, onCancel }: { path: string; onConfirm:
   )
 }
 
-// ─── Main component ─────────────────────────────────────────────────────────
+// ─── Create modal ─────────────────────────────────────────────────────────────
+function CreateModal({ type, onConfirm, onCancel }: {
+  type: 'file' | 'dir'
+  onConfirm: (name: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="card p-5 max-w-sm w-full mx-4">
+        <div className="flex items-center gap-2 mb-4">
+          {type === 'dir' ? <FolderPlus size={15} className="text-amber-400" /> : <FilePlus size={15} className="text-cyan-400" />}
+          <p className="font-mono text-sm text-text-primary">
+            {type === 'dir' ? 'Nouveau dossier' : 'Nouveau fichier'}
+          </p>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) onConfirm(name.trim()) }}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={type === 'dir' ? 'nom-du-dossier' : 'fichier.txt'}
+            className="w-full font-mono text-xs bg-base-700 border border-border rounded px-3 py-2 text-text-primary focus:outline-none focus:border-cyan-500/40 mb-4"
+            autoFocus
+          />
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={onCancel} className="px-3 py-1.5 rounded border border-border text-xs font-mono text-text-dim hover:text-text-primary transition-colors">
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-500/10 text-xs font-mono text-cyan-400 hover:bg-cyan-500/20 disabled:opacity-40 transition-colors"
+            >
+              Créer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const FAVORITES_KEY = 'vpsconnect_favorites'
+
+function loadFavorites(): string[] {
+  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]') } catch { return [] }
+}
+
+function saveFavorites(favs: string[]) {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs))
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string }) {
+  // Navigation state
   const [currentPath, setCurrentPath] = useState(initialPath)
   const [listing, setListing] = useState<ListResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [roots, setRoots] = useState<string[]>([])
+  const [pathInput, setPathInput] = useState('')
+  const [pathInputActive, setPathInputActive] = useState(false)
+  const pathInputRef = useRef<HTMLInputElement>(null)
 
+  // History
+  const historyRef = useRef<string[]>([initialPath])
+  const histIdxRef = useRef(0)
+  const [canBack, setCanBack] = useState(false)
+  const [canForward, setCanForward] = useState(false)
+
+  // Viewer/editor
   const [viewer, setViewer] = useState<ReadResponse | null>(null)
   const [viewerLoading, setViewerLoading] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -133,18 +138,35 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
+  // Modals & actions
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [roots, setRoots] = useState<string[]>([])
+  const [createModal, setCreateModal] = useState<'file' | 'dir' | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
 
-  const [pathInput, setPathInput] = useState('')
-  const [pathInputActive, setPathInputActive] = useState(false)
-  const pathInputRef = useRef<HTMLInputElement>(null)
+  // Search
+  const [search, setSearch] = useState('')
 
-  const loadDir = useCallback(async (p: string) => {
+  // Favorites
+  const [favorites, setFavorites] = useState<string[]>([])
+  const [showFavorites, setShowFavorites] = useState(false)
+
+  // Upload
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Directory sizes cache
+  const [dirSizes, setDirSizes] = useState<Record<string, number>>({})
+  const [computingDu, setComputingDu] = useState<string | null>(null)
+
+  // ── Internal load (does NOT push history) ──────────────────────────────────
+  const doLoadDir = useCallback(async (p: string) => {
     setLoading(true)
     setError(null)
     setViewer(null)
     setEditMode(false)
+    setSearch('')
     try {
       const data = await apiFetch<ListResponse>(`/files/list?path=${encodeURIComponent(p)}`)
       setListing(data)
@@ -157,6 +179,34 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
     }
   }, [])
 
+  // ── Navigate to new path (push history) ────────────────────────────────────
+  const navigateTo = useCallback((p: string) => {
+    const hist = historyRef.current.slice(0, histIdxRef.current + 1)
+    hist.push(p)
+    historyRef.current = hist
+    histIdxRef.current = hist.length - 1
+    setCanBack(histIdxRef.current > 0)
+    setCanForward(false)
+    doLoadDir(p)
+  }, [doLoadDir])
+
+  function handleBack() {
+    if (histIdxRef.current <= 0) return
+    histIdxRef.current -= 1
+    setCanBack(histIdxRef.current > 0)
+    setCanForward(true)
+    doLoadDir(historyRef.current[histIdxRef.current])
+  }
+
+  function handleForward() {
+    if (histIdxRef.current >= historyRef.current.length - 1) return
+    histIdxRef.current += 1
+    setCanBack(true)
+    setCanForward(histIdxRef.current < historyRef.current.length - 1)
+    doLoadDir(historyRef.current[histIdxRef.current])
+  }
+
+  // ── Load file ───────────────────────────────────────────────────────────────
   const loadFile = useCallback(async (p: string) => {
     setViewerLoading(true)
     setEditMode(false)
@@ -172,13 +222,14 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
     }
   }, [])
 
+  // ── Init ────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadDir(initialPath)
-    apiFetch<{ roots: string[] }>('/files/roots')
-      .then((r) => setRoots(r.roots))
-      .catch(() => null)
-  }, [initialPath, loadDir])
+    doLoadDir(initialPath)
+    apiFetch<{ roots: string[] }>('/files/roots').then((r) => setRoots(r.roots)).catch(() => null)
+    setFavorites(loadFavorites())
+  }, [initialPath, doLoadDir])
 
+  // ── Save file ───────────────────────────────────────────────────────────────
   async function saveFile() {
     if (!viewer) return
     setSaving(true)
@@ -200,41 +251,168 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
     }
   }
 
+  // ── Delete file ─────────────────────────────────────────────────────────────
   async function deleteFile(filePath: string) {
     try {
       await apiFetch(`/files?path=${encodeURIComponent(filePath)}`, { method: 'DELETE' })
       setDeleteTarget(null)
       setViewer(null)
-      loadDir(currentPath)
+      doLoadDir(currentPath)
     } catch (e) {
       setError((e as Error).message)
       setDeleteTarget(null)
     }
   }
 
+  // ── Create file or directory ─────────────────────────────────────────────────
+  async function handleCreate(name: string) {
+    const targetPath = `${currentPath}/${name}`
+    try {
+      if (createModal === 'dir') {
+        await apiFetch('/files/mkdir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: targetPath }),
+        })
+      } else {
+        await apiFetch('/files/write', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: targetPath, content: '' }),
+        })
+      }
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setCreateModal(null)
+      doLoadDir(currentPath)
+    }
+  }
+
+  // ── Rename ───────────────────────────────────────────────────────────────────
+  async function handleRenameSubmit(entry: FileEntry, newName: string) {
+    if (!newName.trim() || newName === entry.name) { setRenaming(null); return }
+    const from = `${currentPath}/${entry.name}`
+    const to = `${currentPath}/${newName.trim()}`
+    try {
+      await apiFetch('/files/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to }),
+      })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setRenaming(null)
+      doLoadDir(currentPath)
+    }
+  }
+
+  // ── Upload ───────────────────────────────────────────────────────────────────
+  async function handleUpload(files: File[]) {
+    if (!files.length) return
+    setUploading(true)
+    setUploadError(null)
+    const errors: string[] = []
+    for (const file of files) {
+      try {
+        const buf = await file.arrayBuffer()
+        await apiUpload(currentPath, file.name, buf)
+      } catch (e) {
+        errors.push(`${file.name}: ${(e as Error).message}`)
+      }
+    }
+    setUploading(false)
+    if (errors.length) setUploadError(errors.join(' · '))
+    doLoadDir(currentPath)
+  }
+
+  // ── Download ──────────────────────────────────────────────────────────────────
+  async function handleDownload(filePath: string, filename: string) {
+    try {
+      await apiDownload(`/files/download?path=${encodeURIComponent(filePath)}`, filename)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  // ── Compute dir size ──────────────────────────────────────────────────────────
+  async function handleComputeSize(dirPath: string) {
+    setComputingDu(dirPath)
+    try {
+      const data = await apiFetch<{ path: string; bytes: number }>(`/files/du?path=${encodeURIComponent(dirPath)}`)
+      setDirSizes((prev) => ({ ...prev, [dirPath]: data.bytes }))
+    } catch { /* silently ignore */ }
+    finally { setComputingDu(null) }
+  }
+
+  // ── Copy path ────────────────────────────────────────────────────────────────
+  function handleCopyPath(p: string) {
+    navigator.clipboard.writeText(p).catch(() => null)
+  }
+
+  // ── Cd in terminal ───────────────────────────────────────────────────────────
+  function handleCdTerminal(dirPath: string) {
+    window.location.href = `/console?cd=${encodeURIComponent(dirPath)}`
+  }
+
+  // ── Favorites ────────────────────────────────────────────────────────────────
+  function toggleFavorite(p: string) {
+    setFavorites((prev) => {
+      const next = prev.includes(p) ? prev.filter((f) => f !== p) : [...prev, p]
+      saveFavorites(next)
+      return next
+    })
+  }
+
+  // ── Path input ────────────────────────────────────────────────────────────────
   function handlePathInputSubmit(e: React.FormEvent) {
     e.preventDefault()
     setPathInputActive(false)
-    loadDir(pathInput)
+    navigateTo(pathInput)
   }
 
+  // ── Drag & drop ───────────────────────────────────────────────────────────────
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) handleUpload(files)
+  }
+
+  // ── Computed values ───────────────────────────────────────────────────────────
   const dirs = listing?.entries.filter((e) => e.isDir).length ?? 0
   const files = listing?.entries.filter((e) => !e.isDir).length ?? 0
+  const totalSize = listing?.entries.reduce((acc, e) => acc + (e.isDir ? 0 : e.size), 0) ?? 0
+  const isFav = favorites.includes(currentPath)
 
   return (
-    <div className="flex flex-col h-full gap-3 min-h-0">
+    <div
+      className="flex flex-col h-full gap-3 min-h-0"
+      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false) }}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-cyan-500/10 border-2 border-dashed border-cyan-500/40 rounded pointer-events-none">
+          <div className="flex items-center gap-2 font-mono text-sm text-cyan-400">
+            <Upload size={16} /> Déposer les fichiers ici
+          </div>
+        </div>
+      )}
+
       {/* Root shortcuts */}
       {roots.length > 0 && (
         <div className="flex flex-wrap gap-1.5 flex-shrink-0">
           {roots.map((root) => (
             <button
               key={root}
-              onClick={() => loadDir(root)}
+              onClick={() => navigateTo(root)}
               className={`font-mono text-[11px] px-2.5 py-1 rounded border transition-all
                 ${currentPath === root || currentPath.startsWith(root + '/')
                   ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400'
-                  : 'bg-base-800 border-border text-text-dim hover:text-text-secondary hover:border-cyan-500/20'
-                }`}
+                  : 'bg-base-800 border-border text-text-dim hover:text-text-secondary hover:border-cyan-500/20'}`}
             >
               {root}
             </button>
@@ -243,33 +421,28 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
       )}
 
       {/* Toolbar */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <button
-          onClick={() => listing?.parent && loadDir(listing.parent)}
-          disabled={!listing?.parent}
-          title="Dossier parent"
-          className="flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 disabled:opacity-25 disabled:cursor-not-allowed text-xs font-mono transition-all flex-shrink-0"
-        >
+      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        {/* History nav */}
+        <button onClick={handleBack} disabled={!canBack} title="Précédent"
+          className="flex items-center px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 disabled:opacity-25 disabled:cursor-not-allowed text-xs font-mono transition-all flex-shrink-0">
           <ArrowLeft size={12} />
         </button>
-        <button
-          onClick={() => loadDir('/opt')}
-          title="Accueil /opt"
-          className="flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 text-xs font-mono transition-all flex-shrink-0"
-        >
+        <button onClick={handleForward} disabled={!canForward} title="Suivant"
+          className="flex items-center px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 disabled:opacity-25 disabled:cursor-not-allowed text-xs font-mono transition-all flex-shrink-0">
+          <ArrowRight size={12} />
+        </button>
+        <button onClick={() => navigateTo('/opt')} title="Accueil /opt"
+          className="flex items-center px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 text-xs font-mono transition-all flex-shrink-0">
           <Home size={12} />
         </button>
-        <button
-          onClick={() => loadDir(currentPath)}
-          title="Rafraîchir"
-          className="flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 text-xs font-mono transition-all flex-shrink-0"
-        >
+        <button onClick={() => doLoadDir(currentPath)} title="Rafraîchir"
+          className="flex items-center px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-text-primary hover:border-cyan-500/30 text-xs font-mono transition-all flex-shrink-0">
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
         </button>
 
-        {/* Path bar — click to edit */}
+        {/* Path bar */}
         {pathInputActive ? (
-          <form onSubmit={handlePathInputSubmit} className="flex-1">
+          <form onSubmit={handlePathInputSubmit} className="flex-1 min-w-[160px]">
             <input
               ref={pathInputRef}
               value={pathInput}
@@ -282,25 +455,104 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
         ) : (
           <button
             onClick={() => { setPathInputActive(true); setPathInput(currentPath); setTimeout(() => pathInputRef.current?.select(), 0) }}
-            className="flex-1 min-w-0 flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 hover:border-cyan-500/20 transition-all"
+            className="flex-1 min-w-0 min-w-[100px] flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 hover:border-cyan-500/20 transition-all"
           >
-            <Breadcrumb currentPath={currentPath} onNavigate={loadDir} />
+            <Breadcrumb currentPath={currentPath} onNavigate={navigateTo} />
           </button>
         )}
+
+        {/* Favorite toggle */}
+        <button
+          onClick={() => toggleFavorite(currentPath)}
+          title={isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          className={`flex items-center px-2 py-1.5 rounded border border-border bg-base-800 transition-all text-xs flex-shrink-0
+            ${isFav ? 'text-amber-400 border-amber-400/30' : 'text-text-dim hover:text-amber-400 hover:border-amber-400/20'}`}
+        >
+          {isFav ? <Star size={12} /> : <StarOff size={12} />}
+        </button>
+
+        {/* Favorites dropdown */}
+        {favorites.length > 0 && (
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setShowFavorites((v) => !v)}
+              className="font-mono text-[10px] px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-amber-400 hover:border-amber-400/20 transition-all"
+            >
+              Favoris ({favorites.length})
+            </button>
+            {showFavorites && (
+              <div className="absolute right-0 top-full mt-1 z-30 card min-w-[200px] py-1">
+                {favorites.map((fav) => (
+                  <button key={fav} onClick={() => { navigateTo(fav); setShowFavorites(false) }}
+                    className="w-full text-left px-3 py-1.5 font-mono text-[11px] text-text-dim hover:text-cyan-400 hover:bg-base-700/50 transition-colors truncate">
+                    {fav}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="relative flex-shrink-0">
+          <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-dim/50 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filtrer…"
+            className="font-mono text-[11px] bg-base-800 border border-border rounded pl-6 pr-2 py-1.5 text-text-primary placeholder:text-text-dim/40 focus:outline-none focus:border-cyan-500/30 w-28 transition-all"
+          />
+        </div>
+
+        {/* Upload button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          title="Uploader des fichiers dans ce dossier"
+          className="flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-mint hover:border-mint/30 disabled:opacity-50 text-xs font-mono transition-all flex-shrink-0"
+        >
+          {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => { if (e.target.files) { handleUpload(Array.from(e.target.files)); e.target.value = '' } }}
+        />
+
+        {/* Create buttons */}
+        <button onClick={() => setCreateModal('dir')} title="Nouveau dossier"
+          className="flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-amber-400 hover:border-amber-400/20 text-xs font-mono transition-all flex-shrink-0">
+          <FolderPlus size={12} />
+        </button>
+        <button onClick={() => setCreateModal('file')} title="Nouveau fichier"
+          className="flex items-center gap-1 px-2 py-1.5 rounded border border-border bg-base-800 text-text-dim hover:text-cyan-400 hover:border-cyan-500/20 text-xs font-mono transition-all flex-shrink-0">
+          <FilePlus size={12} />
+        </button>
       </div>
 
-      {/* Error banner */}
+      {/* Error banners */}
       {error && (
         <div className="flex items-center justify-between px-3 py-2 rounded border border-crimson/30 bg-crimson/5 font-mono text-xs text-crimson flex-shrink-0">
           <span>{error}</span>
           <button onClick={() => setError(null)}><X size={12} /></button>
         </div>
       )}
+      {uploadError && (
+        <div className="flex items-center justify-between px-3 py-2 rounded border border-amber-400/30 bg-amber-400/5 font-mono text-xs text-amber-400 flex-shrink-0">
+          <span>Upload: {uploadError}</span>
+          <button onClick={() => setUploadError(null)}><X size={12} /></button>
+        </div>
+      )}
 
       {/* Content area */}
       <div className="flex gap-3 flex-1 min-h-0 overflow-hidden">
         {/* File listing */}
-        <div className="flex flex-col min-w-0 overflow-hidden" style={{ flex: viewer || viewerLoading ? '0 0 45%' : '1 1 100%' }}>
+        <div
+          className="flex flex-col min-w-0 overflow-hidden"
+          style={{ flex: viewer || viewerLoading ? '0 0 45%' : '1 1 100%' }}
+        >
           <div className="card flex-1 overflow-auto">
             {loading ? (
               <div className="flex items-center justify-center h-32 gap-2 text-text-dim font-mono text-xs">
@@ -308,69 +560,33 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
               </div>
             ) : listing ? (
               <>
-                <table className="w-full text-xs font-mono min-w-[320px]">
-                  <thead className="sticky top-0 bg-base-900 z-10">
-                    <tr className="border-b border-border">
-                      <th className="text-left px-3 py-2 text-text-dim font-normal tracking-widest text-[10px]">NOM</th>
-                      <th className="text-right px-3 py-2 text-text-dim font-normal tracking-widest text-[10px] hidden sm:table-cell">TAILLE</th>
-                      <th className="text-right px-3 py-2 text-text-dim font-normal tracking-widest text-[10px] hidden md:table-cell">MODIFIÉ</th>
-                      <th className="text-right px-3 py-2 text-text-dim font-normal tracking-widest text-[10px] hidden lg:table-cell">PERM</th>
-                      <th className="w-8" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {listing.entries.length === 0 && (
-                      <tr><td colSpan={5} className="text-center py-10 text-text-dim">Dossier vide</td></tr>
-                    )}
-                    {listing.entries.map((entry) => {
-                      const fullPath = `${currentPath}/${entry.name}`
-                      const isViewing = viewer?.path === fullPath
-                      return (
-                        <tr
-                          key={entry.name}
-                          className={`border-b border-border/40 cursor-pointer group transition-colors
-                            ${isViewing ? 'bg-cyan-500/5 border-l-2 border-l-cyan-500/40' : 'hover:bg-base-700/30'}`}
-                          onClick={() => {
-                            if (entry.isDir) loadDir(fullPath)
-                            else if (isReadable(entry.name)) loadFile(fullPath)
-                          }}
-                        >
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <FileIcon entry={entry} />
-                              <span className={`truncate max-w-[180px] ${entry.isDir ? 'text-amber-400' : isViewing ? 'text-cyan-400' : 'text-text-primary'}`}>
-                                {entry.name}{entry.isDir ? '/' : ''}{entry.isSymlink ? ' →' : ''}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right text-text-dim hidden sm:table-cell">
-                            {entry.isDir ? '—' : fmtSize(entry.size)}
-                          </td>
-                          <td className="px-3 py-2 text-right text-text-dim hidden md:table-cell">
-                            {fmtDate(entry.mtime)}
-                          </td>
-                          <td className="px-3 py-2 text-right text-text-dim/50 hidden lg:table-cell">{entry.mode}</td>
-                          <td className="px-3 py-2 text-right">
-                            {!entry.isDir && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setDeleteTarget(fullPath) }}
-                                title="Supprimer"
-                                className="opacity-0 group-hover:opacity-100 text-text-dim hover:text-crimson transition-all"
-                              >
-                                <Trash2 size={11} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <FileList
+                  listing={listing}
+                  currentPath={currentPath}
+                  viewingPath={viewer?.path ?? null}
+                  search={search}
+                  renaming={renaming}
+                  dirSizes={dirSizes}
+                  computingDu={computingDu}
+                  onNavigate={navigateTo}
+                  onLoadFile={loadFile}
+                  onSetDelete={setDeleteTarget}
+                  onRenameStart={setRenaming}
+                  onRenameSubmit={handleRenameSubmit}
+                  onRenameCancel={() => setRenaming(null)}
+                  onCopyPath={handleCopyPath}
+                  onCdTerminal={handleCdTerminal}
+                  onComputeSize={handleComputeSize}
+                  onDownload={handleDownload}
+                />
 
                 {/* Status bar */}
-                <div className="px-3 py-1.5 border-t border-border/40 flex gap-4">
+                <div className="px-3 py-1.5 border-t border-border/40 flex items-center gap-4">
                   <span className="font-mono text-[10px] text-text-dim/60">{dirs} dossier{dirs > 1 ? 's' : ''}</span>
                   <span className="font-mono text-[10px] text-text-dim/60">{files} fichier{files > 1 ? 's' : ''}</span>
+                  {files > 0 && (
+                    <span className="font-mono text-[10px] text-text-dim/40 ml-auto">{fmtSize(totalSize)}</span>
+                  )}
                 </div>
               </>
             ) : null}
@@ -379,87 +595,42 @@ export function FileExplorer({ initialPath = '/opt' }: { initialPath?: string })
 
         {/* Viewer / Editor panel */}
         {(viewer || viewerLoading) && (
-          <div className="flex flex-col flex-1 min-w-0 min-h-0 card overflow-hidden">
-            {/* Viewer header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-border flex-shrink-0 gap-2">
-              <div className="min-w-0">
-                <p className="font-mono text-xs text-text-primary truncate">{viewer?.path.split('/').pop()}</p>
-                {viewer && <p className="font-mono text-[10px] text-text-dim/60">{fmtSize(viewer.size)} · {fmtDate(viewer.mtime)}</p>}
-              </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {saveMsg && (
-                  <span className={`font-mono text-[10px] ${saveMsg.startsWith('Err') ? 'text-crimson' : 'text-mint'}`}>{saveMsg}</span>
-                )}
-                {viewer && !editMode && (
-                  <button
-                    onClick={() => { setEditMode(true); setEditContent(viewer.content) }}
-                    title="Éditer"
-                    className="flex items-center gap-1 px-2 py-1 rounded border border-border bg-base-700 text-text-dim hover:text-mint hover:border-mint/40 transition-all text-[11px] font-mono"
-                  >
-                    <Edit3 size={11} /> Éditer
-                  </button>
-                )}
-                {editMode && (
-                  <>
-                    <button
-                      onClick={() => { setEditMode(false); setEditContent(viewer?.content ?? '') }}
-                      className="flex items-center gap-1 px-2 py-1 rounded border border-border text-text-dim text-[11px] font-mono hover:text-text-primary transition-colors"
-                    >
-                      <X size={11} /> Annuler
-                    </button>
-                    <button
-                      onClick={saveFile}
-                      disabled={saving}
-                      className="flex items-center gap-1 px-2 py-1 rounded border border-mint/40 bg-mint/10 text-mint text-[11px] font-mono hover:bg-mint/20 disabled:opacity-50 transition-all"
-                    >
-                      {saving ? <RefreshCw size={11} className="animate-spin" /> : <Save size={11} />}
-                      Sauver
-                    </button>
-                  </>
-                )}
-                {viewer && !editMode && (
-                  <button
-                    onClick={() => setDeleteTarget(viewer.path)}
-                    title="Supprimer ce fichier"
-                    className="flex items-center gap-1 px-2 py-1 rounded border border-border bg-base-700 text-text-dim hover:text-crimson hover:border-crimson/40 transition-all"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                )}
-                <button onClick={() => { setViewer(null); setEditMode(false) }} className="text-text-dim hover:text-text-primary transition-colors p-1">
-                  <X size={13} />
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            {viewerLoading ? (
-              <div className="flex items-center justify-center flex-1 gap-2 text-text-dim font-mono text-xs">
-                <RefreshCw size={13} className="animate-spin" /> Lecture...
-              </div>
-            ) : editMode ? (
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="flex-1 resize-none p-3 font-mono text-[12px] text-text-primary bg-base-900 focus:outline-none leading-relaxed"
-                spellCheck={false}
-              />
-            ) : viewer ? (
-              <pre className="flex-1 overflow-auto p-3 font-mono text-[11px] text-text-secondary leading-relaxed whitespace-pre-wrap break-words">
-                {viewer.content}
-              </pre>
-            ) : null}
-          </div>
+          <FileViewer
+            viewer={viewer}
+            viewerLoading={viewerLoading}
+            editMode={editMode}
+            editContent={editContent}
+            saving={saving}
+            saveMsg={saveMsg}
+            onEditContentChange={setEditContent}
+            onEditStart={() => { setEditMode(true); setEditContent(viewer?.content ?? '') }}
+            onSave={saveFile}
+            onCancel={() => { setEditMode(false); setEditContent(viewer?.content ?? '') }}
+            onClose={() => { setViewer(null); setEditMode(false) }}
+            onDelete={() => viewer && setDeleteTarget(viewer.path)}
+          />
         )}
       </div>
 
-      {/* Delete confirmation modal */}
+      {/* Modals */}
       {deleteTarget && (
         <ConfirmDelete
           path={deleteTarget}
           onConfirm={() => deleteFile(deleteTarget)}
           onCancel={() => setDeleteTarget(null)}
         />
+      )}
+      {createModal && (
+        <CreateModal
+          type={createModal}
+          onConfirm={handleCreate}
+          onCancel={() => setCreateModal(null)}
+        />
+      )}
+
+      {/* Click outside to close favorites */}
+      {showFavorites && (
+        <div className="fixed inset-0 z-20" onClick={() => setShowFavorites(false)} />
       )}
     </div>
   )

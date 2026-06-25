@@ -4,8 +4,14 @@ import jwt from 'jsonwebtoken'
 import { redis } from '../redis.js'
 import pty from 'node-pty'
 import fs from 'node:fs'
+import os from 'node:os'
 
 const SHELL = process.env.SHELL ?? (fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh')
+
+// /etc est monté depuis le host — lire le vrai hostname du VPS
+const VPS_HOSTNAME = (() => {
+  try { return fs.readFileSync('/etc/hostname', 'utf8').trim() } catch { return os.hostname() }
+})()
 
 const MAX_MSG_BYTES = 4096
 
@@ -16,8 +22,9 @@ const PTY_ENV: Record<string, string> = {
   HOME: '/root',
   USER: 'root',
   LOGNAME: 'root',
+  HOSTNAME: VPS_HOSTNAME,
   SHELL,
-  PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/node_modules/.bin',
+  PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
   PM2_HOME: process.env.PM2_HOME ?? '/root/.pm2',
   LANG: 'en_US.UTF-8',
   LC_ALL: 'en_US.UTF-8',
@@ -48,7 +55,7 @@ export const consoleRoutes: FastifyPluginAsync = async (app) => {
       name: 'xterm-256color',
       cols: 120,
       rows: 30,
-      cwd: '/opt',
+      cwd: '/root',
       env: PTY_ENV,
     })
 
